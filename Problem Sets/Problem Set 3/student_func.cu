@@ -93,12 +93,38 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
   /*Here are the steps you need to implement
     1) find the minimum and maximum value in the input logLuminance channel
        store in min_logLum and max_logLum
+
+      Use reduce operator to find max and min
+
+
+
+
+
     2) subtract them to find the range
     3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins
+         bin here means which bin the value lum[i] should be placed in
+         should use a function with atomicAdd to update the histogram
+         that's equivalent to the following serial code:
+         
+         histo = new int[numBins];
+         for (int i = 0; i < numRows * numCols; i++)
+         {
+            int bin = (lum[i] - lumMin) / lumRange * numBins;
+            histo[bin]++;         
+         }
+
+
     4) Perform an exclusive scan (prefix sum) on the histogram to get
        the cumulative distribution of luminance values (this should go in the
-       incoming d_cdf pointer which already has been allocated for you)       */
-
+       incoming d_cdf pointer which already has been allocated for you)       
+       
+         call a cuda kernel to perform exclusive scan 
+       
+       
+       */
+      
+   
+      
 
 }
