@@ -44,6 +44,9 @@ void preProcess(uchar4 **h_inputImageRGBA, uchar4 **h_outputImageRGBA,
   //allocate memory for the output
   imageOutputRGBA.create(image.rows, image.cols, CV_8UC4);
 
+  // print out the image size
+  std::cout << "Image size is: " << image.rows << "x" << image.cols << std::endl;
+
   //This shouldn't ever happen given the way the images are created
   //at least based upon my limited understanding of OpenCV, but better to check
   if (!imageInputRGBA.isContinuous() || !imageOutputRGBA.isContinuous()) {
