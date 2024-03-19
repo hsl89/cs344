@@ -80,6 +80,52 @@
 */
 
 #include "utils.h"
+#include <cuda_runtime.h>
+
+enum class CompOp {
+  LessThan,
+  GreaterThan
+};
+
+__global__ void find_extremum(float* d_out, const float* d_in, CompOp op ) {
+  
+  extern __shared__ float sdata[];
+  int myId = threadIdx.x + blockDim.x * blockIdx.x;
+  int tid = threadIdx.x;
+
+  sdata[tid] = d_in[myId];
+
+  __syncthreads();
+
+  for (unsigned int s = blockDim.x / 2; s > 0; s>>=1) {
+    if (tid < s) {
+
+      switch (op) {
+        case CompOp::LessThan:
+          sdata[tid] = sdata[tid] <= sdata[tid + s]? sdata[tid]: sdata[tid + s];
+          break;
+        case CompOp::GreaterThan:
+          sdata[tid] = sdata[tid] >= sdata[tid + s]? sdata[tid]: sdata[tid + s];
+      }
+
+      __syncthreads();
+    }
+  }
+
+  if (tid == 0) {
+    d_out[blockIdx.x] = sdata[tid];
+  }
+}
+
+__global__ void make_histo(int* d_histo, int numBins,  const float* d_in, const float min, const float lumRange) {
+  int myId = threadIdx.x + blockDim.x * blockIdx.x;
+  int bin = (d_in[myId] - min) / lumRange * numBins;
+
+  if (bin >= numBins) {
+    return;
+  }
+  atomicAdd(&(d_histo[bin]), 1);
+}
 
 void your_histogram_and_prefixsum(const float* const d_logLuminance,
                                   unsigned int* const d_cdf,
@@ -95,12 +141,39 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
        store in min_logLum and max_logLum
 
       Use reduce operator to find max and min
+  */
+
+  const int maxThreadsPerBlock = 1024;
+  int threads = maxThreadsPerBlock;
+
+  int numPixels = numRows * numCols;
+  int blocks = numPixels / maxThreadsPerBlock;
+
+  float *d_out, *d_intermediate;
+  checkCudaErrors(cudaMalloc(&d_out, 1 * sizeof(float)));
+
+  checkCudaErrors(cudaMalloc(&d_intermediate, block * sizeof(float)));
+
+  // max
+  find_extremum<<<blocks, threads, threads * sizeof(float)>>>(d_intermediate, d_logLuminance, CompOp::GreaterThan);
+  find_extremum<<<1, blocks, blocks * sizeof(float)>>>(d_out, d_intermediate, CompOp::GreaterThan);
+  max_logLum = d_out[0];
+
+  //min  
+  find_extremum<<<blocks, threads, threads * sizeof(float)>>>(d_intermediate, d_logLuminance, CompOp::LessThan);
+  find_extremum<<<1, blocks, blocks * sizeof(float)>>>(d_out, d_intermediate, CompOp::LessThan);
+  min_logLum = d_out[0];
 
 
 
 
-
+  /*
     2) subtract them to find the range
+  */
+
+  float lumRange = max_logLum - min_logLum;
+
+  /*
     3) generate a histogram of all the values in the logLuminance channel using
        the formula: bin = (lum[i] - lumMin) / lumRange * numBins
          bin here means which bin the value lum[i] should be placed in
@@ -113,15 +186,21 @@ void your_histogram_and_prefixsum(const float* const d_logLuminance,
             int bin = (lum[i] - lumMin) / lumRange * numBins;
             histo[bin]++;         
          }
+    */
 
+    int* d_histo; 
+    cudaMalloc(&d_histo, numBins * sizeof(int));
+    make_histo<<<blocks, threads>>>(d_histo, d_logLuminance, lumRange);
+
+
+    /*
 
     4) Perform an exclusive scan (prefix sum) on the histogram to get
        the cumulative distribution of luminance values (this should go in the
        incoming d_cdf pointer which already has been allocated for you)       
        
          call a cuda kernel to perform exclusive scan 
-       
-       
+              
        */
       
    
